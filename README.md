@@ -1,13 +1,15 @@
 # A HiFi Shotgun Simulator
   
 <font size ="4">**_Author:  Gene Myers_**<br>
-**_First:   Aug 1, 2021_**<br>
-**_Current: Aug 1, 2021_**</font>
+**_First:   Sept. 1, 2021_**<br>
+**_Current: Sept. 1, 2021_**</font>
 
 - [Commands](#command-line)
-  - [Himodel](#hikmodel)
+  - [Himodel](#himodel)
   - [HIsim](#hisim)
 - [The Error Model](#error-model)
+
+- [Ground Truth C-Library](#C-lib)
             
 <a name="command-line"></a>
 
@@ -233,8 +235,10 @@ coverage that inevitably occurs at contig tips.
 The -w option controls how many base pairs per line to output in the
 Fasta read file, and -U option specifies that upper-case letters should
 be used (default is lower-case).
+         
+                     
+<a name="error-model"></a>
 
-          
 ## The Error Model
 
 The error model provides a probability of an error, either insertion, deletion or substitution at each position in a read sequence.
@@ -273,3 +277,116 @@ deviation.  Lastly, the distribution of the overall error of every read in the d
 distributions are then used by the simulator to either increase or decrease
 the base level error model rate to give reads that have higher or lower
 overall error as seen in realistic data sets.
+
+                     
+<a name="C-lib"></a>
+
+## Ground Truth C-Library
+
+One can regenerate an entire simulated read data set, given the source genome and the haplotype and read ground truth files produced with the -h and -e options of HIsim.  This of course should be true, as the ground truth specifies exactly how each read was obtained from each haplotype, and how each haplotype was obtained from the source genome.  To assist one in leveraging this ground-truth in the testing and evaluation of assemblies, the C-library `lib_sim.[ch]` is included in the package and is described in what follows organized around several principal data types.  The library routines are all re-entrant requiring
+one to optionally provide pointers to work data (e.g. `Get_Read_Source`).
+
+```
+typedef void Genome;
+
+Genome *Load_Genome(char *name);
+void    Free_Genome(Genome *gene);
+int64   Size_Of_Genome(Genome *gene);
+void    Print_Genome(Genome *gene, FILE *file);
+```
+
+To begin one needs to an encoding of the source genome modeled by a 'Genome' object.  `Load_Genome` creates an in-memory `Genome` object given the name of its .fasta or .fastq file.  One can query the memory size of the encoding with `Size_Of_Genome`, print it out as a sequence of contigs with `Print_Genome`, and free the object with `Free_Genome`.
+
+```
+typedef void Haplotype;
+
+Haplotype *Load_Haplotype(FILE *file, Genome *gene);
+void       Free_Haplotype(Haplotype *hap);
+int64      Size_Of_Haplotype(Haplotype *hap);
+void       Print_Haplotype(Haplotype *hap, FILE *file);
+Genome    *Haplotype_Sequence(Haplotype *hap);
+```
+
+A `Haplotype` object encodes the ground truth needed to generate a haplotype from a source genome.  `Load_Haplotype` creates such an object from a ground truth file output by HIsim, where the source genome must be supplied as an argument.  Each haplotype is written to a separate file by HIsim, so each haplotype must be created with individual calls.   One can query the memory size of the encoding with `Size_Of_Haplotype`, print it out as a series of blocks with embedded SNPs with `Print_Haplotype`, and free the object with `Free_Haplotype`.  Lastly, one can produce an explicit `Genome` object for the haplotype with `Haplotype_Sequence`.
+
+```
+typedef struct
+  { int    nreads;   //  number of reads in the data set
+    float *rate;     //  rate[i] = divergence of haplotype i from the source
+    void  *hidden[2];
+  } Reads;
+
+Reads *Load_Reads(FILE *file, int nhaps, Haplotype **haps);
+void   Free_Reads(Reads *reads);
+```
+
+A `Reads` object encodes all the ground truth about a read data set and is
+created by calling `Load_Reads` with the ground truth file, and an array `haps`
+of the `nhaps` haplotypes the reads were sample from.  `Free_Reads` frees all the memory associated with such an object.
+
+```
+typedef struct           //  Read was sample from:
+  { Haplotype *hap;      //    this haplotype 
+    int        contig;   //    this contig of the haplotype
+    int        orient;   //    in the forward (0) / reverse (1) orientation
+    int64      beg;      //    the interval [beg,end] of the contig
+    int64      end;
+  } Source;
+
+Source *Get_Read_Source(Reads *r, int64 i, Source *src);
+void     Free_Read_Source(Source *source);
+```
+
+One can get the information about how the read was sampled from the haplotype by calling `Get_Read_Source`.  It fills in the object pointed at by `src` if not NULL, otherwise it allocates an object.  In both cases it returns a pointer to the filled in object.  An allocated objec can later be freed with `Free_Read_Source`.  The position `beg` and `end` are conceptually
+between base pairs starting at 0, e.g. [0,3] is the first 3 bases of a contig.
+
+```
+typedef void Slice;
+
+Slice  *Get_Read_Slice(Source *source, Slice *slice);
+void    Free_Slice(Slice *slice);
+void    Print_Slice(Slice *slice, FILE *file);
+int     Slice_Length(Slice *slice);
+int     Snps_In_Slice(Slice *slice);
+uint8  *Get_Slice_Sequence(Slice *slice, uint8 *seq);
+uint8  *Get_True_Sequence(Reads *r, int64 i, uint8 *seq);
+```
+
+Each read was sampled from an interval of a haplotype which in turn is a series of SNP mutated blocks/intervals of the source genome.  Therefore each read can
+be viewed as a series of SNP mutated intervals of the source genome.
+An `Slice` encodes this representation of a read and is produced by calling
+`Get_Read_Slice` with a read's source information.  Like `Get_Read_Source` the routine either fills in the slice provided, or if `slice` is NULL then it allocates one, in either case returning a pointer to the filled in object.
+An `Slice` object is
+freed with `Free_Slice` and printed out with `Print_Slice`.  `Slice_Length` returns the length, in base pairs, of the slice which is also the length of
+the read before the introduction of any sequencing errors.  `Snps_In_Slice` returns the number of SNPs introduced into the intervals constituting the slice.
+Finally, `Get_Slice_Sequence` reconstructs the sequence of the slice in the argument `seq` if it is not NULL, otherwise allocating adequate memory for the sequence.  It returns a pointer to the constructed sequence.  Please note that this sequence is encoded as a uint8 array of values from 0-3 representing a, c, g, and t, respectively.  `Get_True_Sequence` is analogous to `Get_Slice_Sequence` but does so directly for the i'th read in the data set, bypassing the need to produce a source and slice object.
+
+```
+typedef void Edit;
+
+Edit   *Get_Read_Edit(Reads *r, int64 i, Edit *edit);
+void    Free_Read_Edit(Edit *edit);
+void    Print_Read_Edit(Edit *edit, FILE *file);
+int     Edit_Length(Edit *edit);
+int     Errors_In_Edit(Edit *edit);
+uint8  *Edit_Sequence(Edit *edit, uint8 *in, uint8 *out);
+uint8  *Get_Read_Sequence(Reads *r, int64 i, uint8 *in, uint8 *out);
+```
+
+Each read had a series of errors introduced into it which are recorded in the ground truth as an editing script that edits the true sequence from the haplotype into the final read.  Such an editing script is encoded in a `Edit` object and is produced for the i'th read in a data set with `Get_Read_Edit`.
+Like `Get_Read_Source` the routine either fills in the edit provided, or if `edit` is NULL then it allocates one, in either case returning a pointer to the filled in object.
+A `Edit` object is free with `Free_Read_Edit` and a a representation of it displayed with `Print_Read_Edit`.  The the length of the edited/final read with is returned by `Edit_Length`, and the number of base pairs of error introduced by a script by `Errors_In_Edit`.
+The final, error-laden read can be produced by calling `Edit_Sequence` with the
+edit script `edit` for the read and its true sequence `in` (as produced by say `Get_True_Sequence` descript above).  The final result is place in `out` if it
+is not NULL, otherwise space is allocated for it and the routine returns a poiter to the result in both cases.
+One can mored directly produce a read's sequence by calling `Get_Read_Sequence`
+which takes buffers `in` and `out` for the true and final sequences.  If either of these is NULL, then the necessary space is allocated.  Note carefully that if `in` is NULL, then the space for the true sequence is allocated and then immediately freed after production of the final sequence.  It is thus more efficient to supply this buffer in a production code.
+
+```
+typedef void *Error_Model;
+
+Error_Model *Load_Error_Model(char *name);
+float       *Read_Error_Profile(Error_Model *epro, uint8 *read, int len,
+                                float *profile);
+```
+

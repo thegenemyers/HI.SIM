@@ -800,19 +800,19 @@ Haplotype *Load_Haplotype(FILE *file, Genome *_gene)
 
   line = 1;
   if (fscanf(file,"1 %d ",&nlen) != 1)
-    { fprintf(stderr,"%s: ONE-Code header missing?\n",Prog_Name);
+    { fprintf(stderr,"%s: Line %d: A ONE-Code header missing?\n",Prog_Name,line);
       exit (1);
     }
   if (nlen != 3)
-    { fprintf(stderr,"%s: ONE-Code type name length is not 3\n",Prog_Name);
+    { fprintf(stderr,"%s: Line %d: ONE-Code type name length is not 3\n",Prog_Name,line);
       exit (1);
     }
   if (fscanf(file," %s\n",name) != 1)
-    { fprintf(stderr,"%s: ONE-Code type name missing?\n",Prog_Name);
+    { fprintf(stderr,"%s: Line %d: ONE-Code type name missing?\n",Prog_Name,line);
       exit (1);
     }
   if (strcmp(name,"hap") != 0)
-    { fprintf(stderr,"%s: ONE-Code type name is not 'hap'\n",Prog_Name);
+    { fprintf(stderr,"%s: Line %d: ONE-Code type name is not 'hap'\n",Prog_Name,line);
       exit (1);
     }
 
@@ -821,14 +821,14 @@ Haplotype *Load_Haplotype(FILE *file, Genome *_gene)
   for (i = 0; i < gene->sfnum; i++)
     { line += 1;
       if (fscanf(file,"c %d %lld\n",&nblock,&nbases) != 2)
-        { fprintf(stderr,"%s: Expecting proper c-line\n",Prog_Name);
+        { fprintf(stderr,"%s: Line %d: Expecting proper c-line\n",Prog_Name,line);
           exit (1);
         }
       numb += nblock;
       for (b = 0; b < nblock; b++)
         { line += 1;
           if (fscanf(file,"B %lld %lld\n",&beg,&end) != 2)
-            { fprintf(stderr,"%s: Expecting proper B-line\n",Prog_Name);
+            { fprintf(stderr,"%s: Line %d: Expecting proper B-line\n",Prog_Name,line);
               exit (1);
             }
           if (fscanf(file," %c",&type) != 1)
@@ -836,42 +836,44 @@ Haplotype *Load_Haplotype(FILE *file, Genome *_gene)
           if (type == 'P')
             { line += 1;
               if (fscanf(file," %d",&nsnp) != 1)
-                { fprintf(stderr,"%s: Expecting length of P-line\n",Prog_Name);
+                { fprintf(stderr,"%s: Line %d: Expecting length of P-line\n",Prog_Name,line);
                   exit (1);
                 }
               nums += nsnp;
               last = -1;
               for (s = 0; s < nsnp; s++)
                 { if (fscanf(file," %d",&loc) != 1)
-                    { fprintf(stderr,"%s: Expecting a snp location\n",Prog_Name);
+                    { fprintf(stderr,"%s: Line %d: Expecting a snp location\n",Prog_Name,line);
                       exit (1);
                     }
                   if (loc < 1 || end-beg < loc)
-                    { fprintf(stderr,"%s: Snp location is not withing its block\n",Prog_Name);
+                    { fprintf(stderr,"%s: Line %d: Snp location is not withing its block\n",
+                                     Prog_Name,line);
                       exit (1);
                     }
                   if (loc <= last)
-                    { fprintf(stderr,"%s: Snp location is not in order\n",Prog_Name);
+                    { fprintf(stderr,"%s: Line %d: Snp location is not in order\n",Prog_Name,line);
                       exit (1);
                     }
                   last = loc;
                 }
               line += 1;
               if (fscanf(file,"\nS %d",&nsnp2) != 1)
-                { fprintf(stderr,"%s: Expecting start of S-line\n",Prog_Name);
+                { fprintf(stderr,"%s: Line %d: Expecting start of S-line\n",Prog_Name,line);
                   exit (1);
                 }
               if (nsnp2 != nsnp)
-                { fprintf(stderr,"%s: P- and S-line list don't have the same length\n",Prog_Name);
+                { fprintf(stderr,"%s: Line %d: P- and S-line list don't have the same length\n",
+                                 Prog_Name,line);
                   exit (1);
                 }
               for (s = 0; s < nsnp; s++)
                 { if (fscanf(file," %d",&snp) != 1)
-                    { fprintf(stderr,"%s: Expecting a snp offset\n",Prog_Name);
+                    { fprintf(stderr,"%s: Line %d: Expecting a snp offset\n",Prog_Name,line);
                       exit (1);
                     }
                   if (snp < 1 || snp > 3)
-                    { fprintf(stderr,"%s: Snp offest is not in [1,3]\n",Prog_Name);
+                    { fprintf(stderr,"%s: Line %d: Snp offest is not in [1,3]\n",Prog_Name,line);
                       exit (1);
                     }
                 }
@@ -932,6 +934,7 @@ Haplotype *Load_Haplotype(FILE *file, Genome *_gene)
       off += (4 - (gene->sflen[i] & 0x3)) & 0x3;
     }
   cblk->cum = ntot;
+  cblk->beg = cblk[-1].beg + (ntot-cblk[-1].cum);
   cblk->snp = csnp;
   bptrs[gene->sfnum] = cblk;
 
@@ -959,12 +962,19 @@ static int get_sequence(uint8 *pack, int64 beg, int64 len, uint8 *seq)
   return ((int) len);
 }
 
-static void mutate_block(uint8 *seq, uint32 *snps, int len)
-{ uint32 w, p, o;
-  int    i;
+static void mutate_block(uint8 *seq, Block *b, uint32 beg, uint32 end)
+{ uint32 *snp;
+  uint32 w, p, o;
+  int    i, len;
+
+  snp  = b->snp;
+  len  = b[1].snp - snp;
+  seq -= beg;
 
   for (i = 0; i < len; i++)
-    { w = snps[i];
+    { w = snp[i];
+      if (w < beg || w >= end)
+        continue;
       p = (w >> 2);
       o = (w & 0x3);
       seq[p] = (seq[p]+o) & 0x3;
@@ -1042,7 +1052,7 @@ Genome *Haplotype_Sequence(Haplotype *_hap)
 
       for (b = blocks[i]; b < blocks[i+1]; b++)
         { len = get_sequence(sbase,b->beg,b[1].cum-b->cum,seq);
-          mutate_block(seq,b->snp,b[1].snp-b->snp);
+          mutate_block(seq,b,0,len);
 #ifdef DEBUG_HAPLO_MAKE
           show_block(seq,b);
 #endif
@@ -1094,179 +1104,532 @@ Genome *Haplotype_Sequence(Haplotype *_hap)
  ********************************************************************************************/
 
 typedef struct
-  { int      hap;
-    int      scaf;
+  { int      src;
     int      orient;
     int64    rbeg;
     int64    rend;
     char    *ops;
-    int     *length;
   } Script;
+
+typedef struct
+  { Haplotype *hap;
+    int        ctg;
+  } Contig;
 
 typedef struct
   { int64    nreads;
     float   *rate;    // [0..nhaps)
     Script  *edit;    // [0..nreads)
-  } _Read_Truth;
+    Contig  *srcs;    // [0..nhaps*nscafs)
+    int     *length;
+  } _Reads;
 
-void Free_Read_Truth(Read_Truth *_truth)
-{ _Read_Truth *truth = (_Read_Truth *) _truth;
+void Free_Reads(Reads *_truth)
+{ _Reads *truth = (_Reads *) _truth;
+  free(truth->length);
   free(truth->edit[0].ops);
-  free(truth->edit[0].length);
   free(truth->edit);
   free(truth->rate);
   free(truth);
 }
 
-Read_Truth *Load_Read_Truth(FILE *file)
-{ _Read_Truth *truth;
-  int          line, nlen, nhap, nops, nlens, hap;
-  int         *lens;
-  char         name[3], *ops;
-  int64        nreads, totrds, totops;
-  float        rate, *rates;
-  Script      *reads;
-  int          i, j, h;
+Reads *Load_Reads(FILE *file, int nhaps, Haplotype **haps)
+{ _Reads *truth;
+  int     line, nlen, chap, nops, nlens, hap;
+  int     lctg, ctg, nctg;;
+  int    *lens, *lenp;
+  char    name[3], *ops;
+  int64   nreads, totrds, totops;
+  float   rate, *rates;
+  Script *reads;
+  Contig *srces;
+  int     i, j, h, c;
 
   line = 1;
   if (fscanf(file,"1 %d ",&nlen) != 1)
-    { fprintf(stderr,"%s: ONE-Code header missing?\n",Prog_Name);
+    { fprintf(stderr,"%s: Line %d: ONE-Code header missing?\n",Prog_Name,line);
       exit (1);
     }
   if (nlen != 3)
-    { fprintf(stderr,"%s: ONE-Code type name length is not 3\n",Prog_Name);
+    { fprintf(stderr,"%s: Line %d: ONE-Code type name length is not 3\n",Prog_Name,line);
       exit (1);
     }
   if (fscanf(file," %s\n",name) != 1)
-    { fprintf(stderr,"%s: ONE-Code type name missing?\n",Prog_Name);
+    { fprintf(stderr,"%s: Line %d: ONE-Code type name missing?\n",Prog_Name,line);
       exit (1);
     }
   if (strcmp(name,"err") != 0)
-    { fprintf(stderr,"%s: ONE-Code type name is not 'err'\n",Prog_Name);
+    { fprintf(stderr,"%s: Line %d: ONE-Code type name is not 'err'\n",Prog_Name,line);
       exit (1);
     }
 
   totrds = 0;
   totops = 0;
-  nhap = 1;
-  while ( ! feof(file))
-    { line += 1;
+  chap   = 0;
+  nctg   = 0;
+  while (1)
+    { chap += 1;
+      c = fgetc(file);
+      if (feof(file))
+        { if (chap < nhaps)
+            { fprintf(stderr,"%s: Line %d: File is missing %d haplotypes\n",
+                             Prog_Name,line,nhaps-chap);
+              exit (1);
+            }
+          break;
+        }
+      else
+        ungetc(c,file);
+      line += 1;
       if (fscanf(file,"h %lld %f\n",&nreads,&rate) != 2)
-        { fprintf(stderr,"%s: Expecting proper h-line\n",Prog_Name);
+        { fprintf(stderr,"%s: Line %d: Expecting proper h-line\n",Prog_Name,line);
           exit (1);
         }
+      if (chap > nhaps)
+        { fprintf(stderr,"%s: Line %d: File refers to more than %d haplotypes\n",
+                         Prog_Name,line,nhaps);
+          exit (1);
+        }
+      lctg = 0;
       for (i = 0; i < nreads; i++)
-        { if (fscanf(file,"S %d %*d %*d %*lld %*lld\n",&hap) != 1)
-            { fprintf(stderr,"%s: Expecting proper S-line\n",Prog_Name);
+        { if (fscanf(file,"S %d %d %*d %*lld %*lld\n",&hap,&ctg) != 2)
+            { fprintf(stderr,"%s: Line %d: Expecting proper S-line %d\n",Prog_Name,line,i);
               exit (1);
             }
-          if (hap != nhap)
-            { fprintf(stderr,"%s: Read is not in haplotype %d but rather %d\n",Prog_Name,nhap,hap);
+          if (hap != chap)
+            { fprintf(stderr,"%s: Line %d: Read is not in haplotype %d but rather %d\n",
+                             Prog_Name,line,chap,hap);
               exit (1);
             }
+          if (ctg != lctg)
+            nctg += 1;
           if (fscanf(file,"O %d ",&nops) != 1)
-            { fprintf(stderr,"%s: Expecting proper O-line\n",Prog_Name);
+            { fprintf(stderr,"%s: Line %d: Expecting proper O-line\n",Prog_Name,line);
               exit (1);
             }
-          if (fscanf(file,"%*s\n") != 0)
-            { fprintf(stderr,"%s: Expecting ops string\n",Prog_Name);
-              exit (1);
+          if (nops > 0)
+            { if (fscanf(file,"%*s\n") != 0)
+                { fprintf(stderr,"%s: Line %d: Expecting ops string\n",Prog_Name,line);
+                  exit (1);
+                }
             }
           if (fscanf(file,"L %d ",&nlens) != 1)
-            { fprintf(stderr,"%s: Expecting proper L-line\n",Prog_Name);
+            { fprintf(stderr,"%s: Line %d: Expecting proper L-line %d\n",Prog_Name,line,i);
               exit (1);
             }
           if (nlens != 2*nops+1)
-            { fprintf(stderr,"%s: L list should be %d elements, not %d\n",Prog_Name,2*nops+1,nlens);
+            { fprintf(stderr,"%s: Line %d: L list should be %d elements, not %d\n",
+                             Prog_Name,line,2*nops+1,nlens);
               exit (1);
             }
           for (j = 0; j < nlens; j++)
             if (fscanf(file," %*d") != 0)
+              { fprintf(stderr,"%s: Line %d: L list isn't long enough (%d)\n",Prog_Name,line,j);
+                exit (1);
+              }
           if (fscanf(file,"\n") != 0)
-            { fprintf(stderr,"%s: L list is too long\n",Prog_Name);
+            { fprintf(stderr,"%s: Line %d: L list is too long\n",Prog_Name,line);
               exit (1);
             }
           totops += nops;
         }
+      nctg   += 1;
       totrds += nreads;
-      nhap   += 1;
     }
 
-  truth = Malloc(sizeof(_Read_Truth),"Allocating Read Truth");
-  rates = Malloc(sizeof(float)*nhap,"Allocating Read Truth");
+  truth = Malloc(sizeof(_Reads),"Allocating Read Truth");
+  rates = Malloc(sizeof(float)*nhaps,"Allocating Read Truth");
   reads = Malloc(sizeof(Script)*(totrds+1),"Allocating Read Truth");
+  srces = Malloc(sizeof(Contig)*nctg,"Allocating Read Truth");
   ops   = Malloc(totops,"Allocating Read Truth");
-  lens  = Malloc(2*totops+nreads,"Allocating Read Truth");
+  lens  = Malloc((2*totops+totrds)*sizeof(int),"Allocating Read Truth");
 
+  truth->nreads = totrds;
   truth->rate   = rates;
   truth->edit   = reads;
+  truth->srcs   = srces;
+  truth->length = lens;
   reads->ops    = ops;
-  reads->length = lens;
 
   rewind(file);
+  fscanf(file,"1 %*d %*s\n");
 
   totrds = 0;
   totops = 0;
-  for (h = 0; h < nhap; h++)
-    { if (fscanf(file,"h %lld %f\n",&nreads,rates+h) != 2)
-        { fprintf(stderr,"%s: Expecting proper h-line\n",Prog_Name);
-          exit (1);
-        }
+  nctg   = 0;
+  chap   = 0;
+  for (h = 0; h < nhaps; h++)
+    { fscanf(file,"h %lld %f\n",&nreads,rates+h);
+      lctg = 0;
       for (i = 0; i < nreads; i++)
         { Script *r;
 
           r = reads+totrds;
           r->ops = ops + totops;
-          r->length = lens + (2*totops + totrds);
+          lenp   = lens + (2*totops + totrds);
 
-          fscanf(file,"S %d %d %d %lld %lld\n",&r->hap,&r->scaf,&r->orient,&r->rbeg,&r->rend);
+          fscanf(file,"S %d %d",&hap,&ctg);
+          if (ctg != lctg)
+            { nctg += 1;
+              lctg = ctg;
+              srces[nctg].hap = haps[chap];
+              srces[nctg].ctg = ctg;
+            }
+          r->src = nctg;
+          fscanf(file," %d %lld %lld\n",&r->orient,&r->rbeg,&r->rend);
           fscanf(file,"O %d ",&nops);
-          fscanf(file,"%s\n",r->ops);
+          if (nops > 0)
+            fscanf(file,"%s\n",r->ops);
           fscanf(file,"L %d ",&nlens);
           for (j = 0; j < nlens; j++)
-            fscanf(file," %d",r->length+j);
+            fscanf(file," %d",lenp+j);
           fscanf(file,"\n");
 
           totops += nops;
           totrds += 1;
         }
+      nctg += 1;
+      chap += 1;
     }
   reads[totrds].ops = ops + totops;
-  reads[totrds].length = lens + (2*totops + totrds);
 
-  return ((Read_Truth *) truth);
+  return ((Reads *) truth);
 }
 
+Source *Get_Read_Source(Reads *r, int64 i, Source *src)
+{ _Reads  *truth = (_Reads *) r;
+  Script  *e     = truth->edit + i;
+  Contig  *s     = truth->srcs + e->src;
 
-#ifdef XXX
+  if (src == NULL)
+    { src = Malloc(sizeof(Source),"Allocating read source");
+      if (src == NULL)
+        exit (1);
+    }
 
-char *Haplotype_read(Haplotype *hap, int64 beg, int64 end)
-{
-  l = hap->block[hap->gene->sfnum] - 1;
-  f = hap->block[0]
-  b = f + (1.*beg/l[1]->cum) * (l-f);
-  e = f + (1.*end/l[1]->cum) * (l-f);
-  while (b->cum > beg)
+  src->hap    = s->hap;
+  src->contig = s->ctg;
+  src->orient = e->orient;
+  src->beg    = e->rbeg;
+  src->end    = e->rend;
+
+  return (src);
+}
+
+void Free_Read_Source(Source *source)
+{ free(source); }
+
+typedef struct
+  { int64      beg;
+    int64      end;
+    Block     *fst;
+    Block     *lst;
+    Haplotype *hap;
+  } _Slice;
+
+Slice *Get_Read_Slice(Source *source, Slice *_slice)
+{ _Haplotype *hap;
+  int64       beg, end;
+  Block      *l, *f;
+  Block      *b, *e;
+  _Slice     *slice;
+
+
+  hap = (_Haplotype *) (source->hap);
+  beg = source->beg;
+  end = source->end;
+  l = hap->blocks[hap->gene->sfnum] - 1;
+  f = hap->blocks[0];
+  b = f + (beg * (l-f))/l[1].cum;
+  e = f + (end * (l-f))/l[1].cum;
+  while (beg < b->cum)
     b -= 1;
-  while (beg < b[1].cum)
+  while (beg >= b[1].cum)
     b += 1;
-  while (e->cum > end)
+  while (end <= e->cum)
     e -= 1;
-  while (end < e[1].cum)
+  while (end > e[1].cum)
     e += 1;
-  
-  if (b < e)
-    { len = get_sequence(sbase,b->beg + (beg-b->cum),b[1].cum-beg,seq);
-      for (b++; b < e; b++)
-        len = get_sequence(sbase,b->beg,b[1].cum-b->cum,seq);
-      len = get_sequence(sbase,b->beg,end-b0>cum,seq);
+
+  if (_slice == NULL)
+    { slice = Malloc(sizeof(_Slice),"Allocating Haplotype Slice");
+      if (slice == NULL)
+        exit (1);
     }
   else
-    len = get_sequence(sbase,b->beg + (beg-b->cum),end-beg,seq);
+    slice = (_Slice *) _slice;
+
+  slice->beg = beg;
+  slice->end = end;
+  slice->fst = b;
+  slice->lst = e;
+  slice->hap = hap;
+
+  return ((Slice *) slice);
 }
 
-#endif
-  
+void Free_Slice(Slice *slice)
+{ free(slice); };
+
+void Print_Slice(Slice *slice, FILE *file)
+{ _Slice *s = (_Slice *) slice;
+  Block *b, *e;
+
+  b = s->fst;
+  e = s->lst; 
+  if (b < e)
+    { fprintf(file,"[%lld,%lld]",b->beg + (s->beg-b->cum), b->beg + (b[1].cum-b->cum));
+      for (b++; b < e; b++)
+        fprintf(file," [%lld,%lld]",b->beg, b->beg + (b[1].cum-b->cum));
+      fprintf(file," [%lld,%lld]",e->beg, e->beg + (s->end-e->cum));
+    }
+  else
+    fprintf(file,"[%lld,%lld]",b->beg + (s->beg-b->cum), e->beg + (s->end-e->cum));
+}
+
+int Slice_Length(Slice *slice)
+{ _Slice *s = (_Slice *) slice;
+
+  return (s->end-s->beg);
+}
+
+int Snps_In_Slice(Slice *slice)
+{ _Slice *s = (_Slice *) slice;
+  uint32  *f, *g;
+  uint32   c, p;
+
+  f = s->fst->snp;
+  c = s->beg - s->fst->cum;
+  while (1)
+    { if (f >= s->fst[1].snp)
+        break;
+      p = (*f >> 2);
+      if (p >= c)
+        break;
+      f += 1;
+    }
+
+  g = s->lst->snp;
+  c = s->end - s->lst->cum;
+  while (1)
+    { if (g >= s->lst[1].snp)
+        break;
+      p = (*g >> 2);
+      if (p > c)
+        break;
+      g += 1;
+    }
+
+  return (g-f);
+}
+
+uint8 *Get_Slice_Sequence(Slice *slice, uint8 *seq)
+{ _Slice *s = (_Slice *) slice;
+  uint8   *sbase  = ((_Haplotype *) s->hap)->gene->scafs[0];
+  int      len, bln;
+  Block   *b, *e;
+
+  if (seq == NULL)
+    { len = Slice_Length(slice);
+      seq = Malloc(len,"Allocating Sequence");
+      if (seq == NULL)
+        exit (1);
+    }
+
+  b = s->fst;
+  e = s->lst; 
+  if (b < e)
+    { len = get_sequence(sbase,b->beg + (s->beg-b->cum),b[1].cum-s->beg,seq);
+      mutate_block(seq,b,s->beg-b->cum,b[1].cum-b->cum);
+      for (b++; b < e; b++)
+        { bln = b[1].cum-b->cum;
+          get_sequence(sbase,b->beg,bln,seq+len);
+          mutate_block(seq+len,b,0,bln);
+          len += bln;
+        }
+      get_sequence(sbase,e->beg,s->end-e->cum,seq+len);
+      mutate_block(seq+len,e,0,s->end-e->cum);
+    }
+  else
+    { get_sequence(sbase,b->beg + (s->beg-b->cum),s->end-s->beg,seq);
+      mutate_block(seq,b,s->beg-b->cum,s->end-e->cum);
+    }
+
+  return (seq);
+}
+
+uint8 *Get_True_Sequence(Reads *r, int64 i, uint8 *seq)
+{ Source src;
+  _Slice slc;
+
+  return (Get_Slice_Sequence(Get_Read_Slice(Get_Read_Source(r,i,&src),(Slice *) &slc),seq));
+}
+
+
+typedef struct
+  { int   len;
+    char *ops;
+    int  *vals;
+  } _Edit;
+
+Edit *Get_Read_Edit(Reads *reads, int64 i, Edit *edit)
+{ _Reads *r = (_Reads *) reads; 
+  _Edit *e;
+
+  if (edit == NULL)
+    { e = Malloc(sizeof(_Edit),"Allocating Read Script");
+      if (e == NULL)
+        exit (1);
+    }
+  else
+    e = (_Edit *) edit;
+  e->len  = r->edit[i+1].ops - r->edit[i].ops;
+  e->ops  = r->edit[i].ops;
+  e->vals = r->length + (2*(e->ops - r->edit[0].ops) + i);
+  return ((Edit *) e);
+}
+
+void    Free_Read_Edit(Edit *edit)
+{ free((_Edit *) edit); }
+
+void Print_Read_Edit(Edit *edit, FILE *file)
+{ static char base_pair[] = { 'a', 'c', 'g', 't' };
+
+  char *ops = ((_Edit *) edit)->ops;
+  int  *val = ((_Edit *) edit)->vals;
+  int   len = ((_Edit *) edit)->len;
+  int   i, j;
+
+  fprintf(file,"%d",val[0]);
+  for (i = 0, j = 1; i < len; i++, j+=2)
+    { fprintf(file," %c",ops[i]);
+      switch (ops[i])
+      { case 'h': case 'z': case 't':
+        case 'H': case 'Z': case 'T':
+          fprintf(file,"%d",val[j]);
+          break;
+        case 'I':
+        case 'S':
+          fprintf(file,"%c",base_pair[val[j]]);
+          break;
+        default:
+          break;
+      }
+      fprintf(file," %d",val[j+1]);
+    }
+}
+
+int Edit_Length(Edit *edit)
+{ char *ops = ((_Edit *) edit)->ops;
+  int  *val = ((_Edit *) edit)->vals;
+  int   len = ((_Edit *) edit)->len;
+  int   i, j, olen;
+
+  olen = val[0];
+  for (i = 0, j = 1; i < len; i++, j+=2)
+    { switch (ops[i])
+      { case 'H': case 'Z': case 'T':
+          olen += val[j];
+          break;
+        case 'I':
+        case 'S':
+          olen += 1;
+          break;
+        default:
+          break;
+      }
+      olen += val[j+1];
+    }
+
+  return (olen);
+}
+
+int Errors_In_Edit(Edit *edit)
+{ char *ops = ((_Edit *) edit)->ops;
+  int  *val = ((_Edit *) edit)->vals;
+  int   len = ((_Edit *) edit)->len;
+  int   i, j, sum;
+
+  sum = 0;
+  for (i = 0, j = 1; i < len; i++, j+=2)
+    switch (ops[i])
+    { case 'h': case 'z': case 't':
+        sum += val[j];
+        break;
+      case 'H': case 'Z': case 'T':
+        sum += val[j];
+        break;
+      default:
+        sum += 1;
+        break;
+    }
+
+  return (sum);
+}
+
+uint8  *Edit_Sequence(Edit *edit, uint8 *in, uint8 *out)
+{ char *ops = ((_Edit *) edit)->ops;
+  int  *val = ((_Edit *) edit)->vals;
+  int   len = ((_Edit *) edit)->len;
+  int   i, j, olen, iln;
+
+  if (out == NULL)
+    { len = Edit_Length(edit);
+      out = Malloc(len,"Allocating Sequence");
+      if (out == NULL)
+        exit (1);
+    }
+
+  iln = val[0];
+  if (iln > 0)
+    { memcpy(out,in,iln);
+      in += iln;
+      olen = iln;
+    }
+  for (i = 0, j = 1; i < len; i++, j+=2)
+    { iln = val[j];
+      switch (ops[i])
+      { case 'h': case 'z': case 't':
+          in += iln;
+          break;
+        case 'H': case 'Z': case 'T':
+          memcpy(out+olen,in-iln,iln);
+          olen += iln;
+          break;
+        case 'I':
+          out[olen++] = iln;
+          break;
+        case 'S':
+          out[olen++] = iln;
+          in += 1;
+          break;
+        case 'D':
+          in += 1;
+          break;
+      }
+
+      iln = val[j+1];
+      if (iln > 0)
+        { memcpy(out+olen,in,iln);
+          in   += iln;
+          olen += iln;
+        }
+    }
+
+  return (out);
+}
+
+uint8 *Get_Read_Sequence(Reads *r, int64 i, uint8 *in, uint8 *out)
+{ _Edit *edit;
+  uint8 *true, *read;
+
+  true = Get_True_Sequence(r,i,in);
+  read = Edit_Sequence(Get_Read_Edit(r,i,(Edit *) (&edit)),in,out);
+  if (in == NULL)
+    free(true);
+  return (read);
+}
+
 
 /*******************************************************************************************
  *
@@ -1291,6 +1654,8 @@ static void complement(int64 elen, uint8 *s)
     }
 }
 
+#ifdef TESTING
+
 int main(int argc, char *argv[])
 { Genome     *gene;
   int         nhaps;
@@ -1298,15 +1663,17 @@ int main(int argc, char *argv[])
 
   (void) complement;
 
+  Prog_Name = "libtest";
+
   if (argc != 3)
-    { fprintf(stderr,"Usage <genome.fast> <trush>\n");
+    { fprintf(stderr,"Usage <genome.fast> <truth>\n");
       exit (1);
     }
 
   gene = Load_Genome(argv[1]);
 
   for (nhaps = 1; 1; nhaps++)
-    { f = fopen(Catenate(argv[2],Numbered_Suffix(".",nhaps,"."),"hap",""),"r");
+    { f = fopen(Catenate(argv[2],Numbered_Suffix(".hap",nhaps,""),"",""),"r");
       if (f == NULL)
          break;
       fclose(f);
@@ -1314,6 +1681,7 @@ int main(int argc, char *argv[])
   nhaps -= 1;
 
   { Haplotype *haps[nhaps];
+    Reads     *reads;
     int        h;
 
     for (h = 0; h < nhaps; h++)
@@ -1322,6 +1690,46 @@ int main(int argc, char *argv[])
         fclose(f);
       }
 
+    // for (h = 0; h < nhaps; h++)
+      // Print_Haplotype(haps[h],stdout);
+
+    f = fopen(Catenate(argv[2],".err","",""),"r");
+    reads = Load_Reads(f,nhaps,haps);
+    fclose(f);
+
+    { Source src;
+      Edit  *edit;
+      Slice *slice;
+      int64  i;
+      int    h;
+
+      edit  = Get_Read_Edit(reads,0,NULL);
+      slice = Get_Read_Slice(Get_Read_Source(reads,0,&src),NULL);
+      
+      h = 0;
+      for (i = 0; i < reads->nreads; i++)
+        { Get_Read_Source(reads,i,&src);
+          Get_Read_Edit(reads,i,edit);
+          Get_Read_Slice(&src,slice);
+
+          printf("Read %lld:\n",i);
+
+          while (src.hap != haps[h])
+            h += 1;
+          printf("  Hap %d ctg %d %c %lld %lld\n",
+                 h+1,src.contig,src.orient?'R':'F',src.beg,src.end);
+
+          printf("  %d %d: ",Slice_Length(slice),Snps_In_Slice(slice));
+          Print_Slice(slice,stdout);
+          printf("\n");
+
+          printf("  %d %d: ",Edit_Length(edit),Errors_In_Edit(edit));
+          Print_Read_Edit(edit,stdout);
+          printf("\n");
+        }
+    }
+
+    Free_Reads(reads);
     for (h = 0; h < nhaps; h++)
       Free_Haplotype(haps[h]);
   }
@@ -1330,3 +1738,5 @@ int main(int argc, char *argv[])
 
   exit (0);
 }
+
+#endif

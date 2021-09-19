@@ -2370,7 +2370,7 @@ static int64 Shotgun(Genome *gene, int ploid, double prate)
                     fprintf(ERR_OUT," %d",abs(co->del));
                   j = co->pos;
                 }
-              fprintf(ERR_OUT," %lld\n",len-j);
+              fprintf(ERR_OUT," %lld\n",(len-j)-1);
             }
 
           //  Output the simulated read
@@ -2398,8 +2398,8 @@ static int64 Shotgun(Genome *gene, int ploid, double prate)
         genbp += COVERAGE*(glen+RMEAN) - totbp;
     }
 
-  fseek(ERR_OUT,emark,SEEK_SET);
-  fprintf(ERR_OUT,"0%10lld",nreads);
+  fseek(ERR_OUT,emark+2,SEEK_SET);
+  fprintf(ERR_OUT,"%10lld",nreads);
   fseek(ERR_OUT,0,SEEK_END);
 
   free(oseq);
@@ -2578,6 +2578,8 @@ int main(int argc, char *argv[])
                        RMEAN,RSDEV,RSHORT);
       }
 
+    if (ERRINFO)
+      fprintf(ERR_OUT,"1 3 err\n");
     COVERAGE /= nhaps;
     for (p = 0; p < nhaps; p++)
       { if (VERBOSE)

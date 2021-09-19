@@ -18,7 +18,7 @@ HIsim: HIsim.c gene_core.c gene_core.h
 	$(CC) $(CFLAGS) -o HIsim HIsim.c gene_core.c -lpthread -lm
 
 libtest: lib_sim.c gene_core.c gene_core.h
-	$(CC) $(CFLAGS) -o libtest lib_sim.c gene_core.c -lpthread -lm
+	$(CC) $(CFLAGS) -DTESTING -o libtest lib_sim.c gene_core.c -lpthread -lm
 
 clean:
 	rm -f $(ALL)
