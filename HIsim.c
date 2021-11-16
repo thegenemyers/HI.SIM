@@ -1282,7 +1282,7 @@ static Genome *Haplotype_Sequence(Haplotype *hap)
   sflen = Malloc(sizeof(int64)*sfnum,"Allocating haplotype sequence");
   scafs = Malloc(sizeof(uint8 *)*sfnum,"Allocating haplotype sequence");
   bases = Malloc(sizeof(uint8)*nbps,"Allocating haplotype sequence");
-  seq   = Malloc(hap->max_blk,"Allocating haplotype sequencea");
+  seq   = Malloc(hap->max_blk,"Allocating haplotype sequence");
 
   if (db == NULL || sflen == NULL || scafs == NULL || bases == NULL || seq == NULL)
       exit (1);
@@ -1316,7 +1316,8 @@ static Genome *Haplotype_Sequence(Haplotype *hap)
             { bases[p++] = (seq[s] << 6) | (seq[s+1] << 4) | (seq[s+2] << 2) | seq[s+3];
               s += 4;
             }
-          bases[p] = 0;
+          if (r == 6)
+            bases[p] = 0;
           while (s < len)
             { bases[p] |= (seq[s++] << r);
               if (r > 0)
@@ -2310,10 +2311,14 @@ static int64 Shotgun(Genome *gene, int ploid, double prate)
                       { sseq[j++] = co->data;
                         l += 1;
                       }
+                    else
+                      l += 1;
                   }
                 else
                   { if (co->del < 0)
-                      j += co->del+1;
+                      { j += co->del+1;
+                        l += 1;
+                      }
                     else
                       { n = co->del;
                         m = co->data;
@@ -2469,6 +2474,10 @@ int main(int argc, char *argv[])
             break;
           case 'w':
             ARG_NON_NEGATIVE(WIDTH,"Line width")
+            if (WIDTH < 4)
+              { fprintf(stderr,"%s: Line width, -w, must be 4 or more\n",Prog_Name);
+                exit (1);
+              }
             break;
           case 'x':
             ARG_NON_NEGATIVE(RSHORT,"Read length minimum")

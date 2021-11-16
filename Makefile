@@ -2,9 +2,9 @@ DEST_DIR = ~/bin
 
 CFLAGS = -O3 -Wall -Wextra -Wno-unused-result -fno-strict-aliasing
 
-CC = clang
+CC = gcc
 
-ALL = HImodel HIsim libtest
+ALL = HImodel HIsim HIfasta libtest fq2fa
 
 all: $(ALL)
 
@@ -17,8 +17,14 @@ HImodel: HImodel.c libfastk.c libfastk.h
 HIsim: HIsim.c gene_core.c gene_core.h
 	$(CC) $(CFLAGS) -o HIsim HIsim.c gene_core.c -lpthread -lm
 
-libtest: lib_sim.c gene_core.c gene_core.h
+HIfasta: HIfasta.c lib_sim.c lib_sim.h gene_core.c gene_core.h
+	$(CC) $(CFLAGS) -o HIfasta HIfasta.c lib_sim.c gene_core.c -lpthread -lm
+
+libtest: lib_sim.c lib_sim.h gene_core.c gene_core.h
 	$(CC) $(CFLAGS) -DTESTING -o libtest lib_sim.c gene_core.c -lpthread -lm
+
+fq2fa: fq2fa.c gene_core.c gene_core.h
+	$(CC) $(CFLAGS) -DTESTING -o fq2fa fq2fa.c gene_core.c -lpthread -lm
 
 clean:
 	rm -f $(ALL)
