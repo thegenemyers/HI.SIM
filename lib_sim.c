@@ -1,36 +1,10 @@
 /*******************************************************************************************
  *
- *  Synthetic DNA shotgun dataset simulator
- *     From a supplied reference genome in the form of a Dazzler .dam, sample reads of
- *     mean length -m from a log-normal length distribution with standard deviation -s,
- *     but ignore reads of length less than -x.  Collect enough reads to cover the genome
- *     -c times.   Introduce -e fraction errors into each read where the ratio of insertions,
- *     deletions, and substitutions are set by defined constants INS_RATE and DEL_RATE
- *     within generate.c.  The fraction -f controls the rate at which reads are picked from
- *     the forward and reverse strands which defaults to 50%.  If -C is set then assume the
- *     scaffolds are circular.
- *
- *     The -r parameter seeds the random number generator for the generation of the genome
- *     so that one can reproducbile produce the same underlying genome to sample from.  If
- *     missing, then the job id of the invocation seeds the generator.  The output is sent
- *     to the standard output (i.e. it is a pipe).  The output is in fasta format (i.e. it is
- *     a UNIX pipe).  The output is in Pacbio .fasta format suitable as input to fasta2DB.
- *
- *     The genome is considered a sequence of *scaffolds* (these are reconstituted from the
- *     Dazzler's internal encoding of a .dam), where the gaps are filled with a random
- *     sequence that follows the base distribution of the contigs of the genome.  The program
- *     then samples these filled in scaffolds for reads.  If the -C optioin is set then the
- *     program assumes each scaffold is a circular sequence.
- *
- *     The -M option requests that the scaffold and coordinates from which each read has
- *     been sampled are written to the indicated file, one line per read, ASCII encoded.
- *     This "map" file essentially tells one where every read belongs in an assembly and
- *     is very useful for debugging and testing purposes.  If a read pair is say b,e then
- *     if b < e the read was sampled from [b,e] in the forward direction, and from [e,b]
- *     in the reverse direction otherwise.
+ *  Lib_Sim:
+ *     C-library for using HIsim ground truth information of the analysis of an assembly
  *
  *  Author:  Gene Myers
- *  Date  :  June 2021
+ *  Date  :  November 2021
  *
  ********************************************************************************************/
 
@@ -3011,12 +2985,24 @@ phase2:
       Get_Edit(r,rj,(Edit *) &edit2);
 
       Init_Map(&edit1,map1);                 //  Map intervals from true to raw read space
-      b1 = Boundary_Map(map1,align->b1,1);
-      e1 = Boundary_Map(map1,align->e1,0);
+      if (align->b1 == 0)
+        b1 = 0;
+      else
+        b1 = Boundary_Map(map1,align->b1,1);
+      if (align->e1 == src1.end - ab1)
+        e1 = src1.end - ab1;
+      else
+        e1 = Boundary_Map(map1,align->e1,0);
 
       Init_Map(&edit2,map2);
-      b2 = Boundary_Map(map2,align->b2,1);
-      e2 = Boundary_Map(map2,align->e2,0);
+      if (align->b2 == 0)
+        b2 = 0;
+      else
+        b2 = Boundary_Map(map2,align->b2,1);
+      if (align->e2 == src2.end - ab2)
+        e2 = src2.end - ab2;
+      else
+        e2 = Boundary_Map(map2,align->e2,0);
 
       //  If want an edit script then:
 

@@ -40,6 +40,7 @@
 #include <unistd.h>
 #include <math.h>
 #include <ctype.h>
+#include <time.h>
 
 #undef   DEBUG_HAPLO
 #undef   DEBUG_HAPLO_SCAN
@@ -1174,7 +1175,6 @@ static void Output_Haplotype(Haplotype *hap, FILE *file)
   Block  *b, *e;
 
   off = 0;
-  fprintf(file,"1 3 hap\n");
   for (i = 0; i < hap->gene->sfnum; i++)
     { b = hap->blocks[i];
       e = hap->blocks[i+1];
@@ -2343,7 +2343,7 @@ static int64 Shotgun(Genome *gene, int ploid, double prate)
 
           //  If -e output edit script
 
-          if (ERR_OUT)
+          if (ERRINFO)
             { int   i, j;
               Edit *co;
 
@@ -2403,9 +2403,11 @@ static int64 Shotgun(Genome *gene, int ploid, double prate)
         genbp += COVERAGE*(glen+RMEAN) - totbp;
     }
 
-  fseek(ERR_OUT,emark+2,SEEK_SET);
-  fprintf(ERR_OUT,"%10lld",nreads);
-  fseek(ERR_OUT,0,SEEK_END);
+  if (ERRINFO)
+    { fseek(ERR_OUT,emark+2,SEEK_SET);
+      fprintf(ERR_OUT,"%10lld",nreads);
+      fseek(ERR_OUT,0,SEEK_END);
+    }
 
   free(oseq);
 
@@ -2420,10 +2422,38 @@ static int64 Shotgun(Genome *gene, int ploid, double prate)
  ********************************************************************************************/
 
 int main(int argc, char *argv[])
-{ Genome     *source;
+{ char       *command;
+  Genome     *source;
   char       *PLOIDY;
   int         nhaps;
   Haplotype **haps;
+  char        tseq[25];
+
+  //  Capture command line for provenance
+
+  { int    n, i;
+    char  *c;
+    time_t tprov;
+
+    n = 0;
+    for (i = 1; i < argc; i++)
+      n += strlen(argv[i])+1;
+
+    command = Malloc(n+1,"Allocating command string");
+    if (command == NULL)
+      exit (1);
+
+    c = command;
+    if (argc >= 1)
+      { c += sprintf(c,"%s",argv[1]);
+        for (i = 2; i < argc; i++)
+          c += sprintf(c," %s",argv[i]);
+      }
+    *c = '\0';
+
+    tprov = time(NULL);
+    strftime(tseq,20,"%F_%T",localtime(&tprov));
+  }
 
   //  Process command line
 
@@ -2431,7 +2461,7 @@ int main(int argc, char *argv[])
     int    flags[128];
     char  *eptr;
 
-    ARG_INIT("jass");
+    ARG_INIT("HIsim");
 
     COVERAGE  = 50.;
     RMEAN     = -1;
@@ -2556,16 +2586,21 @@ int main(int argc, char *argv[])
   //  If the -t option set then output haplotype trace to appropriately named files
 
   if (HAPINFO)
-    { int   p;
-      FILE *f;
-
+    { int    p;
+      FILE  *f;
+      
       for (p = 0; p < nhaps; p++)
         { f = fopen(Catenate(OUT,Numbered_Suffix(".hap",p+1,""),"",""),"w");
           if (f == NULL)
             { fprintf(stderr,"%s: Cannot create %s.%d.hap for writing\n",Prog_Name,OUT,p+1);
               exit (1);
             }
+
+          fprintf(f,"1 3 hap\n");
+          fprintf(f,"! %ld %s 3 1.0 %ld %s %ld %s\n",strlen(Prog_Name),Prog_Name,
+                                                     strlen(command),command,strlen(tseq),tseq);
           Output_Haplotype(haps[p],f);
+
           fclose(f);
         }
     }
@@ -2588,7 +2623,10 @@ int main(int argc, char *argv[])
       }
 
     if (ERRINFO)
-      fprintf(ERR_OUT,"1 3 err\n");
+      { fprintf(ERR_OUT,"1 3 err\n");
+        fprintf(ERR_OUT,"! %ld %s 3 1.0 %ld %s %ld %s\n",strlen(Prog_Name),Prog_Name,
+                                                         strlen(command),command,strlen(tseq),tseq);
+      }
     COVERAGE /= nhaps;
     for (p = 0; p < nhaps; p++)
       { if (VERBOSE)

@@ -1,3 +1,13 @@
+/*******************************************************************************************
+ *
+ *  Lib_Sim:
+ *     C-library for using HIsim ground truth information of the analysis of an assembly
+ *
+ *  Author:  Gene Myers
+ *  Date  :  November 2021
+ *
+ ********************************************************************************************/
+
 #ifndef _LIB_HISIM
 #define _LIB_HISIM
 
