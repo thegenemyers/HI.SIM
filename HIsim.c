@@ -644,7 +644,7 @@ static int mutate_read(uint8 *seq, int len, Edit *ops, int emax, double erate)
   uint32   x, y, z;
   int      i, m, k;
   int      j, q, n;
-  int      ma, loc, etop;
+  int      ma, etop;
   double   ex;
 
   e1 = seq[len];
@@ -672,7 +672,6 @@ static int mutate_read(uint8 *seq, int len, Edit *ops, int emax, double erate)
 #endif
 
   etop = 0;
-  loc = 0;
   m   = Hex[x];
   k   = -2*m;
   for (i = 0; i < len; i++)
@@ -777,7 +776,6 @@ static int mutate_read(uint8 *seq, int len, Edit *ops, int emax, double erate)
                       printf(" [%5d %c %d]",i,MICDEL[m],n);
 #endif
                     }
-                  loc = i+1;
                   break;
                 }
             }
@@ -797,7 +795,6 @@ static int mutate_read(uint8 *seq, int len, Edit *ops, int emax, double erate)
                           ops[etop].del  = delta[j];
                           ops[etop].data = dbase[j];
                           etop += 1;
-                          loc = i+1;
 #ifdef DEBUG_OPS
                           printf(" %5d %s *\n",i,op_text[j]);
 #endif
@@ -837,7 +834,6 @@ static int mutate_read(uint8 *seq, int len, Edit *ops, int emax, double erate)
                   ops[etop].del  = delta[j];
                   ops[etop].data = dbase[j];
                   etop += 1;
-                  loc = i+1;
 #ifdef DEBUG_OPS
                   printf(" %5d %s **\n",i,op_text[j]);
 #endif
@@ -2181,6 +2177,8 @@ static int64 Shotgun(Genome *gene, int ploid, double prate)
     { emark = ftello(ERR_OUT);
       fprintf(ERR_OUT,"h 1000000000 %g\n",prate);
     }
+  else
+    emark = 0;
 
   genbp  = 0;
   nreads = 0;
@@ -2459,6 +2457,7 @@ int main(int argc, char *argv[])
 
   { int    i, j, k;
     int    flags[128];
+    int    iseed;
     char  *eptr;
 
     ARG_INIT("HIsim");
@@ -2497,7 +2496,8 @@ int main(int argc, char *argv[])
             PLOIDY = argv[i]+2;
             break;
           case 'r':
-            ARG_NON_NEGATIVE(SEED,"Random number seed")
+            ARG_NON_NEGATIVE(iseed,"Random number seed")
+            SEED = iseed;
             break;
           case 's':
             ARG_NON_NEGATIVE(RSDEV,"Read length standard deviation")

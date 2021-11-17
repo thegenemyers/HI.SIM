@@ -1249,7 +1249,7 @@ ReadTruth *Load_ReadTruth(FILE *file, int nhaps, HapTruth **haps)
         }
       lctg = 0;
       for (i = 0; i < nreads; i++)
-        { if (fscanf(file,"S %d %d %*d %*lld %*lld\n",&hap,&ctg) != 2)
+        { if (fscanf(file,"S %d %d %*d %*d %*d\n",&hap,&ctg) != 2)
             { fprintf(stderr,"%s: Line %d: Expecting proper S-line %d\n",Prog_Name,line,i);
               exit (1);
             }
@@ -1942,6 +1942,7 @@ int Print_Fasta(ReadTruth *_reads, FILE *file)
   tmax = emax = 0;
   tlen = elen = 0;
   tseq = eseq = NULL;
+  rseq = NULL;
 
   nreads = truth->nreads;
   for (i = 0; i < nreads; i++)
@@ -2648,10 +2649,14 @@ Alignment *Align(ReadTruth *r, int64 ri, int64 rj, int min_match, int do_edit, A
       int64     l1, l2, ln;
       int64     f1, f2;
       Interval *f1p, *f2p;
-      int       i, chain, hit, nmat;
+      int       i, chain, nmat;
 
       q1 = p1+N1;
       q2 = p2+N2;
+
+      f1p = f2p = NULL;
+      l1  = l2  = 0;
+      f1  = f2  = 0;
 
       b1 = slice1.fst;
       for (i = 0; i <= N1; i++)
@@ -2743,8 +2748,7 @@ Alignment *Align(ReadTruth *r, int64 ri, int64 rj, int min_match, int do_edit, A
         { if (do_edit)
             { npts = 0;
               for (e1 = f1p; e1 <= q1; e1++)
-                { hit = 0;
-                  for (e2 = f2p; e2 <= q2; e2++)
+                { for (e2 = f2p; e2 <= q2; e2++)
                     { if (e1->gbeg < e2->gbeg)
                         b = e2->gbeg;
                       else
@@ -2757,8 +2761,7 @@ Alignment *Align(ReadTruth *r, int64 ri, int64 rj, int min_match, int do_edit, A
                         { if (npts > 0)
                             { if (e1 > p1 && e1->gend == e1[-1].gend &&
                                   l1 == e1->hbeg && ln >= e1->gend - e1->gbeg)
-                                { hit = 1;
-                                  f2p = e2;
+                                { f2p = e2;
                                   break;
                                 }
                               if (e2 > p2 && e2->gend == e2[-1].gend &&
@@ -2776,9 +2779,7 @@ Alignment *Align(ReadTruth *r, int64 ri, int64 rj, int min_match, int do_edit, A
                           npts += 1;
                           f2p = e2;
                           if (e == e1->gend)
-                            { hit = 1;
-                              break;
-                            }
+                            break;
                         }
                     }
                 }
@@ -3049,11 +3050,11 @@ phase2:
             int    SN, SL;
 
             do_snps = (src1.hap != src2.hap);
+            Init_SNP(snp1,slice1.fst);
+            Init_SNP(snp2,slice2.fst);
 
             if (do_snps)
-              { Init_SNP(snp1,slice1.fst);
-                Init_SNP(snp2,slice2.fst);
-                Init_Map(&edit1,map1);
+              { Init_Map(&edit1,map1);
                 Init_Map(&edit2,map2);
 
                 for (p = 0; p < npts; p += 2)
@@ -3108,7 +3109,6 @@ phase2:
             ops  = edit->ops;
             vals = edit->vals;
         
-  
             if (do_snps)
               { Init_SNP(snp1,slice1.fst);
                 Init_SNP(snp2,slice2.fst);

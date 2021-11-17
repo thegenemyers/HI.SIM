@@ -140,7 +140,7 @@ static inline int mypref(uint8 *a, uint8 *b, int n)
 }
 
 #define CHAR_INDEX(k)      ((k) >> 2)
-#define CHAR_SHIFT(k)      (6 - 2*(k&0x3))
+#define CHAR_SHIFT(k)      (6 - 2*((k)&0x3))
 #define CHAR_AT(ptr,ki,ks) ((ptr[ki] >> ks) & 0x3)
 
   //  Assumes la <= lb: compare suffix of la chars of a and b
@@ -1250,7 +1250,7 @@ int main(int argc, char *argv[])
 
         Free_Kmer_Stream(T);
 
-        troot = mktemp(template);
+        troot = mkdtemp(template);
 
         sprintf(command,"Symmex -T8 %s %s",argv[1],troot);
 
