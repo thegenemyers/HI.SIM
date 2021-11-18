@@ -812,8 +812,8 @@ HapTruth *Load_HapTruth(FILE *file, Genome *_gene)
   uint32 *csnp;
   int64   ntot, mblk, off;
 
-  int         line;
-  char        type, name[3];
+  int         line, pfirst;
+  char        type, name[3], pline[1000];
   int64       nbases, beg, end;
   int         nlen, nblock, nsnp, nsnp2, loc, snp, last;
   int         i, b, s;
@@ -834,6 +834,18 @@ HapTruth *Load_HapTruth(FILE *file, Genome *_gene)
   if (strcmp(name,"hap") != 0)
     { fprintf(stderr,"%s: Line %d: ONE-Code type name is not 'hap'\n",Prog_Name,line);
       exit (1);
+    }
+
+  line   = 2;
+  pfirst = 1;
+  while (1)
+    { if (fgets(pline,1000,file) == NULL || (pfirst && pline[0] != '!'))
+        { fprintf(stderr,"%s: Line %d: ! provenance line missing?\n",Prog_Name,line);
+          exit (1);
+        }
+      if (pline[strlen(pline)-1] == '\n')
+        break;
+      pfirst = 0;
     }
 
   nums = 0;
@@ -919,8 +931,12 @@ HapTruth *Load_HapTruth(FILE *file, Genome *_gene)
   mblk = 0;
   off  = 0;
 
-  fscanf(file,"1 %d ",&nlen);
-  fscanf(file," %s\n",name);
+  fscanf(file,"1 %d %s\n",&nlen,name);
+  while (1)
+    { fgets(pline,1000,file);
+      if (pline[strlen(pline)-1] == '\n')
+        break;
+    }
   for (i = 0; i < gene->sfnum; i++)
     { fscanf(file,"c %d %lld\n",&nblock,&nbases);
       bptrs[i] = cblk;
@@ -1192,10 +1208,10 @@ void Free_ReadTruth(ReadTruth *_truth)
 
 ReadTruth *Load_ReadTruth(FILE *file, int nhaps, HapTruth **haps)
 { _ReadTruth *truth;
-  int     line, nlen, chap, nops, nlens, hap;
+  int     line, nlen, chap, nops, nlens, hap, pfirst;
   int     lctg, ctg, nctg;;
   int    *lens, *lenp;
-  char    name[3], *ops;
+  char    name[3], *ops, pline[1000];
   int64   nreads, totrds, totops;
   float   rate, *rates;
   Script *reads;
@@ -1218,6 +1234,18 @@ ReadTruth *Load_ReadTruth(FILE *file, int nhaps, HapTruth **haps)
   if (strcmp(name,"err") != 0)
     { fprintf(stderr,"%s: Line %d: ONE-Code type name is not 'err'\n",Prog_Name,line);
       exit (1);
+    }
+
+  line   = 2;
+  pfirst = 1;
+  while (1)
+    { if (fgets(pline,1000,file) == NULL || (pfirst && pline[0] != '!'))
+        { fprintf(stderr,"%s: Line %d: ! provenance line missing?\n",Prog_Name,line);
+          exit (1);
+        }
+      if (pline[strlen(pline)-1] == '\n')
+        break;
+      pfirst = 0;
     }
 
   totrds = 0;
@@ -1310,6 +1338,11 @@ ReadTruth *Load_ReadTruth(FILE *file, int nhaps, HapTruth **haps)
 
   rewind(file);
   fscanf(file,"1 %*d %*s\n");
+  while (1)
+    { fgets(pline,1000,file);
+      if (pline[strlen(pline)-1] == '\n')
+        break;
+    }
 
   totrds = 0;
   totops = 0;
@@ -3351,6 +3384,10 @@ void Print_Alignment(Alignment *align, FILE *file)
  *
  ********************************************************************************************/
 
+#undef  HAP_CHECK
+#undef  ALIGN_CHECK
+#define READ_CHECK
+
 int main(int argc, char *argv[])
 { Genome     *gene;
   int         nhaps;
@@ -3385,8 +3422,10 @@ int main(int argc, char *argv[])
         fclose(f);
       }
 
-    // for (h = 0; h < nhaps; h++)
-      // Print_HapTruth(haps[h],stdout);
+#ifdef HAP_CHECK
+    for (h = 0; h < nhaps; h++)
+      Print_HapTruth(haps[h],stdout);
+#endif
 
     f = fopen(Catenate(argv[2],".err","",""),"r");
     reads = Load_ReadTruth(f,nhaps,haps);
@@ -3395,13 +3434,17 @@ int main(int argc, char *argv[])
     { Source     src;
       Edit      *edit;
       Slice     *slice;
+      int64      i;
+#ifdef ALIGN_CHECK
       Alignment *align;
-      int64      i, j;
+      int64      j;
       char       query[1000];
+#endif
 
       edit  = Get_Edit(reads,0,NULL);
       slice = Get_Slice(Get_Source(reads,0,&src),NULL);
 
+#ifdef ALIGN_CHECK
       for (i = 0; i < reads->nreads; i++)
         { Get_Source(reads,i,&src);
           if (src.hidx > 1)
@@ -3420,7 +3463,7 @@ int main(int argc, char *argv[])
           Get_Slice(&src,slice);
           printf("\nRead %lld:\n",i);
           printf("  hap %d ctg %d %c %lld %lld\n",
-                 src.hidx+1,src.contig,src.orient?'R':'F',src.beg,src.end);
+                 src.hidx,src.contig,src.orient?'R':'F',src.beg,src.end);
           printf("  %d %d: ",Slice_Length(slice),Snps_In_Slice(slice));
           Print_Slice(slice,1,stdout);
 
@@ -3428,7 +3471,7 @@ int main(int argc, char *argv[])
           Get_Slice(&src,slice);
           printf("\nRead %lld:\n",j);
           printf("  hap %d ctg %d %c %lld %lld\n",
-                 src.hidx+1,src.contig,src.orient?'R':'F',src.beg,src.end);
+                 src.hidx,src.contig,src.orient?'R':'F',src.beg,src.end);
           printf("  %d %d: ",Slice_Length(slice),Snps_In_Slice(slice));
           Print_Slice(slice,1,stdout);
 
@@ -3436,8 +3479,9 @@ int main(int argc, char *argv[])
           Print_Alignment(align,stdout);
           free(align);
         }
+#endif
 
-/*
+#ifdef READ_CHECK
       for (i = 0; i < reads->nreads; i++)
         { Get_Source(reads,i,&src);
           Get_Edit(reads,i,edit);
@@ -3446,7 +3490,7 @@ int main(int argc, char *argv[])
           printf("Read %lld:\n",i);
 
           printf("  hap %d ctg %d %c %lld %lld\n",
-                 src.hidx+1,src.contig,src.orient?'R':'F',src.beg,src.end);
+                 src.hidx,src.contig,src.orient?'R':'F',src.beg,src.end);
 
           printf("  %d %d: ",Slice_Length(slice),Snps_In_Slice(slice));
           Print_Slice(slice,0,stdout);
@@ -3456,7 +3500,7 @@ int main(int argc, char *argv[])
           Print_Edit(edit,stdout);
           printf("\n");
         }
-*/
+#endif
     }
 
     Free_ReadTruth(reads);
