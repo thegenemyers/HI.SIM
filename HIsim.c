@@ -2465,7 +2465,7 @@ int main(int argc, char *argv[])
     COVERAGE  = 50.;
     RMEAN     = -1;
     RSDEV     = -1;
-    RSHORT    = 0;
+    RSHORT    = 4000;
     SEED      = getpid();
     READ_OUT  = stdout;
     WIDTH     = 100;
