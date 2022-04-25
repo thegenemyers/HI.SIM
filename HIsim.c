@@ -2205,7 +2205,7 @@ static int64 Shotgun(Genome *gene, int ploid, double prate)
 
           do
             len = sample_read_length(&erate);
-          while (len < RSHORT);
+          while (len < tooshort);
 
           rbeg = nbeg;
           rend = nbeg + len;
