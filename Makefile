@@ -4,7 +4,7 @@ CFLAGS = -O3 -Wall -Wextra -Wno-unused-result -fno-strict-aliasing
 
 CC = gcc
 
-ALL = HImodel HIsim HIfasta libtest fq2fa
+ALL = HImodel HIsim HIreads HIhaplo libtest fq2fa
 
 all: $(ALL)
 
@@ -17,8 +17,11 @@ HImodel: HImodel.c libfastk.c libfastk.h
 HIsim: HIsim.c gene_core.c gene_core.h
 	$(CC) $(CFLAGS) -o HIsim HIsim.c gene_core.c -lpthread -lm
 
-HIfasta: HIfasta.c lib_sim.c lib_sim.h gene_core.c gene_core.h
-	$(CC) $(CFLAGS) -o HIfasta HIfasta.c lib_sim.c gene_core.c -lpthread -lm
+HIreads: HIreads.c lib_sim.c lib_sim.h gene_core.c gene_core.h
+	$(CC) $(CFLAGS) -o HIreads HIreads.c lib_sim.c gene_core.c -lpthread -lm
+
+HIhaplo: HIhaplo.c lib_sim.c lib_sim.h gene_core.c gene_core.h
+	$(CC) $(CFLAGS) -o HIhaplo HIhaplo.c lib_sim.c gene_core.c -lpthread -lm
 
 libtest: lib_sim.c lib_sim.h gene_core.c gene_core.h
 	$(CC) $(CFLAGS) -DTESTING -o libtest lib_sim.c gene_core.c -lpthread -lm

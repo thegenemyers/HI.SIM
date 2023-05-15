@@ -20,10 +20,10 @@ int main(int argc, char *argv[])
   int         nhaps;
   FILE       *f;
 
-  Prog_Name = "HIfasta";
+  Prog_Name = "HIreads";
 
   if (argc != 3)
-    { fprintf(stderr,"Usage <genome>[.fast[aq]] <truth:err+hap#>\n");
+    { fprintf(stderr,"Usage <genome>[.fast[aq]] <truth:.err+.hap#>\n");
       exit (1);
     }
 
