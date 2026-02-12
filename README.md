@@ -1,6 +1,6 @@
 # A HiFi Shotgun Simulator
   
-<font size ="4">**_Author:  Gene Myers_**<br>
+<font size ="4">**_Author:  Gene Myers & Andrew Ho_**<br>
 **_First:   Sept. 1, 2021_**<br>
 **_Current: Sept. 1, 2021_**</font>
 
@@ -23,6 +23,7 @@ shotgun read data set for a hypothetical multi-ploid genome with accompanying, e
 These programs were developed with the aim of allowing one
 to properly test and evaluate a shotgun assembler
 for HiFI data or other highly accurate read data.
+Recently, Andrew Ho of OpenAI has improved the speed and extended the haplotype model using in part their ChatGPT codex.
 
 <a name="himodel"></a>
 

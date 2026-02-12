@@ -79,6 +79,8 @@ static FILE  *ERR_OUT;    // OUT.err   if -e
 
 static uint64 GENER;      // Generator state
 
+#define IO_BUFFER_SIZE  0x100000u
+
 #define PARETO_MIN     1.0     //  Pareto distribution parameters
 #define PARETO_SHAPE   1.025
 
@@ -556,8 +558,6 @@ static void Load_Error_Model(char *name)
 
     Rlength = Malloc(sizeof(double)*(Rlimit+1),"Read length distribution");
     Rerror  = Malloc(sizeof(double *)*(emax+1),"Read error distribution");
-    if (Rlength == NULL || Rerror == NULL)
-      exit (1);
 
     Rerror[0] = Malloc(sizeof(double)*(emax+1)*(Elimit+1),"Read error distribution");
     for (i = 1; i <= emax; i++)
@@ -633,7 +633,7 @@ typedef struct
 #define NORMAL 0
 #define MICRO  1
 
-static int mutate_read(uint8 *seq, int len, Edit *ops, int emax, double erate)
+static int mutate_read(uint8 *seq, int len, Edit *ops, int emax, double erate, int *del)
 { static int delta[] = { 1, 1, 1, 1, 0, 0, 0, 0, -1 };
   static int dbase[] = { 0, 1, 2, 3, 0, 1, 2, 3,  0 }; 
 
@@ -644,8 +644,17 @@ static int mutate_read(uint8 *seq, int len, Edit *ops, int emax, double erate)
   uint32   x, y, z;
   int      i, m, k;
   int      j, q, n;
-  int      ma, etop;
-  double   ex;
+  int      ma, etop, acum;
+  int      rng;
+  double   ex, irate;
+
+  if (erate <= 0.)
+    { *del = 0;
+      return (0);
+    }
+
+  acum  = 0;
+  irate = 1./erate;
 
   e1 = seq[len];
   e2 = seq[len+1];
@@ -680,7 +689,7 @@ static int mutate_read(uint8 *seq, int len, Edit *ops, int emax, double erate)
 
       h = HepTab+y;
       v = h->all;
-      t = u/erate;
+      t = u*irate;
 #ifdef DEBUG_MUTATE
       printf("%5d: %c %04x %03x %03x %1d :: %.7f %.7f %.7f",i,dna[seq[i+3]],y,x,z,m,u,t,v);
 #endif
@@ -753,6 +762,7 @@ static int mutate_read(uint8 *seq, int len, Edit *ops, int emax, double erate)
                       ops[etop].kind = MICRO;
                       ops[etop].del  = n;
                       ops[etop].data = m;
+                      acum += n;
                       etop += 1;
 #ifdef DEBUG_OPS
                       printf(" %5d %c %d\n",i,MICINS[m],n);
@@ -768,6 +778,7 @@ static int mutate_read(uint8 *seq, int len, Edit *ops, int emax, double erate)
                       ops[etop].kind = MICRO;
                       ops[etop].del  = n;
                       ops[etop].data = m;
+                      acum += n;
                       etop += 1;
 #ifdef DEBUG_OPS
                       printf(" %5d %c %d\n",i,MICDEL[m],n);
@@ -784,8 +795,9 @@ static int mutate_read(uint8 *seq, int len, Edit *ops, int emax, double erate)
               if (t < v)
                 { ex = h->op[ma];
                   h->op[ma] = 0.;
+                  rng = 8;
                 repeat1:
-                  for (j = 0; j < 8; j++)
+                  for (j = 0; j < rng; j++)
                     { v = h->op[j];
                       if (t < v)
                         { if (etop >= emax)
@@ -794,6 +806,7 @@ static int mutate_read(uint8 *seq, int len, Edit *ops, int emax, double erate)
                           ops[etop].kind = NORMAL;
                           ops[etop].del  = delta[j];
                           ops[etop].data = dbase[j];
+                          acum += delta[j];
                           etop += 1;
 #ifdef DEBUG_OPS
                           printf(" %5d %s *\n",i,op_text[j]);
@@ -808,8 +821,9 @@ static int mutate_read(uint8 *seq, int len, Edit *ops, int emax, double erate)
                     }
                   h->op[ma] = ex;
                   u = erand();
-                  if (j < 4 && u < h->ins*erate)
-                    { t = u;
+                  if (u*irate < h->ins && j < rng)
+                    { t = u*irate;
+                      rng = 4;
                       goto repeat1;
                     }
                 }
@@ -823,8 +837,9 @@ static int mutate_read(uint8 *seq, int len, Edit *ops, int emax, double erate)
       else if (t < v)
         { if (erate*v > 1)
             t = u*v;
+          rng = 9;
         repeat2:
-          for (j = 0; j < 9; j++)
+          for (j = 0; j < rng; j++)
             { v = h->op[j];
               if (t < v)
                 { if (etop >= emax)
@@ -833,6 +848,7 @@ static int mutate_read(uint8 *seq, int len, Edit *ops, int emax, double erate)
                   ops[etop].kind = NORMAL;
                   ops[etop].del  = delta[j];
                   ops[etop].data = dbase[j];
+                  acum += delta[j];
                   etop += 1;
 #ifdef DEBUG_OPS
                   printf(" %5d %s **\n",i,op_text[j]);
@@ -846,8 +862,9 @@ static int mutate_read(uint8 *seq, int len, Edit *ops, int emax, double erate)
                 t -= v;
             }
           u = erand();
-          if (j < 4 && u < h->ins*erate)
-            { t = u; 
+          if (u*irate < h->ins && j < rng && j < 8)
+            { t = u*irate; 
+              rng = 4;
               goto repeat2;
             }
         } 
@@ -871,6 +888,7 @@ static int mutate_read(uint8 *seq, int len, Edit *ops, int emax, double erate)
   seq[len+1] = e2;
   seq[len+2] = e3;
 
+  *del = acum;
   return (etop);
 }
 
@@ -1028,8 +1046,6 @@ Genome *Load_Genome(char *name, char **core)
     sflen = Malloc(sizeof(int64)*sfnum,"Allocating genome");
     scafs = Malloc(sizeof(uint8 *)*sfnum,"Allocating genome");
     bases = Malloc(sizeof(uint8)*nbps,"Allocating genome");
-    if (db == NULL || sflen == NULL || scafs == NULL || bases == NULL)
-      exit (1);
 
     db->sfnum    = sfnum;
     db->sflen    = sflen;
@@ -1037,8 +1053,6 @@ Genome *Load_Genome(char *name, char **core)
     db->scafs[0] = bases;
 
     entry.seq = Malloc(smax+4,"Allocating genome");
-    if (entry.seq == NULL)
-      exit (1);
   }
 
   //  In a second scan load and compress the scaffolds
@@ -1280,9 +1294,6 @@ static Genome *Haplotype_Sequence(Haplotype *hap)
   bases = Malloc(sizeof(uint8)*nbps,"Allocating haplotype sequence");
   seq   = Malloc(hap->max_blk,"Allocating haplotype sequence");
 
-  if (db == NULL || sflen == NULL || scafs == NULL || bases == NULL || seq == NULL)
-      exit (1);
-
   for (i = 0; i < sfnum; i++)
     sflen[i] = blocks[i+1]->cum - blocks[i]->cum;
 
@@ -1356,8 +1367,6 @@ static Haplotype *init_haplotype(Genome *gene)
   bptrs  = Malloc(sizeof(Block *)*(gene->sfnum+1),"Allocating Haplotype");
   snps   = Malloc(sizeof(uint32),"Allocating Haplotype");
   hap    = Malloc(sizeof(Haplotype),"Allocating Haplotype");
-  if (blocks == NULL || bptrs == NULL || snps == NULL || hap == NULL)
-    exit (1);
 
   acum = 0;
   numb = 0;
@@ -1600,8 +1609,6 @@ static Haplotype *mutate_haplotype(double rate, Haplotype *hap)
   nbptrs = Malloc(sizeof(Block *)*(sfnum+1),"Allocating Haplotype");
   nsnpts = Malloc(sizeof(uint32)*(isnp+nsnp),"Allocating Haplotype");
   nap    = Malloc(sizeof(Haplotype),"Allocating Haplotype");
-  if (nlocks == NULL || nbptrs == NULL || nsnpts == NULL || nap == NULL)
-    exit (1);
 
   //  In the next pass, mutate the input haplotype using the same pseudo-random sequence
   //    as in previous passes so everything fits perfectly into the new allocated structure.
@@ -1928,10 +1935,6 @@ static Node *scan_rate()
     }
   Scan = eptr;
   n = Malloc(sizeof(Node),"Allocating ploidy tree");
-  if (n == NULL)
-    { Error = 0;
-      return (NULL);
-    }
   n->sub = n->sib = NULL;
   n->rate = v/100.;
   return (n);
@@ -2053,8 +2056,6 @@ static Haplotype **Gen_Haplotypes(Genome *root, char *ploidy, int *nhaps)
   fflush(stderr);
 
   Haps = (Haplotype **) Malloc(sizeof(Haplotype *)*Nhaps,"Allocating haplotypes");
-  if (Haps == NULL)
-    exit (1);
 
   Nhaps = 0;
   hap = init_haplotype(root);
@@ -2142,10 +2143,49 @@ static void complement(int64 elen, uint8 *s)
     }
 }
 
+static inline char *itoa(int x, char *buf, char *out)
+{ char *s;
+
+  if (x < 0)
+    { *out++ = '-';
+      x = -x;
+    }
+  s = buf;
+  while (x >= 10)
+    { *s++ = '0' + (x % 10);
+      x /= 10;
+    }
+  *out++ = '0' + x;
+  while (s > buf)
+    *out++ = *--s;
+  return (out);
+}
+
+static inline char *ltoa(int64 x, char *buf, char *out)
+{ char *s;
+
+  s = buf;
+  while (x >= 10)
+    { *s++ = '0' + (x % 10);
+      x /= 10;
+    }
+  *out++ = '0' + x;
+  while (s > buf)
+    *out++ = *--s;
+  return (out);
+}
+
 static int64 Shotgun(Genome *gene, int ploid, double prate)
 { static char normal_op[] = { 'D', 'S', 'I' };
   static char micro_del[] = { 0, 'h', 'z', 't' }; 
   static char micro_ins[] = { 0, 'H', 'Z', 'T' }; 
+
+  char      *dna;
+  char       hbuffer[128];
+  char      *obuffer;
+  int        outmax;
+  char      *ebuffer;
+  int        errmax;
 
   int64      glen;
   uint8     *scaf;
@@ -2160,6 +2200,11 @@ static int64 Shotgun(Genome *gene, int ploid, double prate)
   int64      emark;
   int        i;
 
+  if (UPPER)
+    dna = "ACGT";
+  else
+    dna = "acgt";
+
   omax = RMEAN + 5*RSDEV;
   oseq = Malloc(omax+3,"Allocating read buffer");
 
@@ -2168,6 +2213,12 @@ static int64 Shotgun(Genome *gene, int ploid, double prate)
 
   smax = RMEAN + 5*RSDEV;
   sseq = Malloc(smax+3,"Allocating mutated read buffer");
+
+  outmax  = smax + (smax-1)/WIDTH + 1;
+  obuffer = Malloc(outmax,"Allocating read output buffer");
+
+  errmax  = emax * 10;
+  ebuffer = Malloc(errmax,"Allocating error trace output buffer");
 
   tooshort = RMEAN / COVERAGE;
   if (tooshort < RSHORT)
@@ -2199,7 +2250,8 @@ static int64 Shotgun(Genome *gene, int ploid, double prate)
       totbp = COVERAGE*(glen-nbeg);
       rtag = 0;
       while (totbp > 0)
-        { int64 len, rbeg, rend, del;
+        { int64 len, rbeg, rend;
+          int   del, hlen, sign, nol;
 
           nbeg += sample_exponential((RMEAN*(glen-nbeg))/totbp);
 
@@ -2242,63 +2294,51 @@ static int64 Shotgun(Genome *gene, int ploid, double prate)
           if (len > omax)
             { omax = 1.2*len + 1000;
               oseq = Realloc(oseq,omax+3,"Allocating read buffer");
-              if (oseq == NULL)
-                exit (1);
             }
 
           get_sequence(scaf,rbeg,len,oseq);
 
+          sign = '+';
           if (erand() >= FLIP_RATE)    //  Complement the string with probability FLIP_RATE.
             { complement(len,oseq);
-              fprintf(READ_OUT,">Sim %d %d - %lld %lld\n",ploid,i+1,rbeg,rend);
-              if (ERRINFO)
-                fprintf(ERR_OUT,"S %d %d 1 %lld %lld\n",ploid,i+1,rbeg,rend);
-#ifdef DEBUG_OPS
-              if (READ_OUT != stdout)
-                printf(">Sim %d %d - %lld %lld\n",ploid,i+1,rbeg,rend);
-#endif
+              sign = '-';
             }
-          else
-            { fprintf(READ_OUT,">Sim %d %d + %lld %lld\n",ploid,i+1,rbeg,rend);
-              if (ERRINFO)
-                fprintf(ERR_OUT,"S %d %d 0 %lld %lld\n",ploid,i+1,rbeg,rend);
+          hlen = sprintf(hbuffer,">Sim %d %d %c %lld %lld\n",ploid,i+1,sign,rbeg,rend);
+          fwrite(hbuffer,1,hlen,READ_OUT);
+          if (ERRINFO)
+            fprintf(ERR_OUT,"S %d %d %d %lld %lld\n",ploid,i+1,(sign=='+')?0:1,rbeg,rend);
 #ifdef DEBUG_OPS
-              if (READ_OUT != stdout)
-                printf(">Sim %d %d - %lld %lld\n",ploid,i+1,rbeg,rend);
+          if (READ_OUT != stdout)
+            printf(">Sim %d %d %c %lld %lld\n",ploid,i+1,sign,rbeg,rend);
 #endif
-            }
 
           //  Generate errors and output CIGAR string
 
-          while ((elen = mutate_read(oseq,len,ops,emax,erate/AvErr)) < 0)
+          while ((elen = mutate_read(oseq,len,ops,emax,erate/AvErr,&del)) < 0)
             { emax = 1.2*emax+100;
               ops  = Realloc(ops,sizeof(Edit)*emax,"Allocating edit script");
-              if (ops == NULL)
-                exit (1);
             }
 
-          { int i;
-
-            del = 0;
-            for (i = 0; i < elen; i++)
-              del += ops[i].del;
-            if (len+del > smax)
-              { smax = 1.2*(len+del) + 1000;
-                sseq = Realloc(sseq,omax+3,"Allocating read buffer");
-              }
-          }
+          if (len+del > smax)
+            { smax = 1.2*(len+del) + 1000;
+              sseq = Realloc(sseq,omax+3,"Allocating read buffer");
+            }
 
           //  Create the erroneous read according to edits in ops
 
-          { int   i, j, l,  m, n, u;
+          { int   i, j, l,  m, n, u, rn;
             Edit *co;
 
             l = 0;
             j = 0;
             for (i = 0; i < elen; i++)
               { co = ops+i;
-                while (l < co->pos)
-                  sseq[j++] = oseq[l++];
+                rn = co->pos - l;
+                if (rn > 0)
+                  { memcpy(sseq+j,oseq+l,rn);
+                    j += rn;
+                    l += rn;
+                  }
                 if (co->kind == NORMAL)
                   { if (co->del > 0)
                       { if (l <= co->pos)
@@ -2333,8 +2373,11 @@ static int64 Shotgun(Genome *gene, int ploid, double prate)
                       }
                   }
               }
-            while (l < len)
-              sseq[j++] = oseq[l++];
+            rn = len - l;
+            if (rn > 0)
+              { memcpy(sseq+j,oseq+l,rn);
+                j += rn;
+              }
    
             sseq[j] = 4;
           }
@@ -2344,52 +2387,82 @@ static int64 Shotgun(Genome *gene, int ploid, double prate)
           if (ERRINFO)
             { int   i, j;
               Edit *co;
+              char  *etop, digits[20];
 
-              fprintf(ERR_OUT,"O %d ",elen);
+              if (elen*33 + 60 >= errmax)
+                { errmax = 1.2*(elen*33 + 60) + 1024;
+                  ebuffer = Realloc(ebuffer,errmax,"Reallocating error trace output buffer");
+                }
+
+              etop = ebuffer;
+              *etop++ = 'O';
+              *etop++ = ' ';
+              etop = itoa(elen,digits,etop);
               for (i = 0; i < elen; i++)
                 { co = ops+i;
+                  *etop++ = ' ';
                   if (co->kind == NORMAL)
-                    fprintf(ERR_OUT,"%c",normal_op[co->del+1]);
+                    *etop++ = normal_op[co->del+1];
                   else if (co->del < 0)
-                    fprintf(ERR_OUT,"%c",micro_del[co->data]);
+                    *etop++ = micro_del[co->data];
                   else
-                    fprintf(ERR_OUT,"%c",micro_ins[co->data]);
+                    *etop++ = micro_ins[co->data];
                 }
-              fprintf(ERR_OUT,"\n");
+              *etop++ = '\n';
 
-              fprintf(ERR_OUT,"L %d",2*elen+1);
+              *etop++ = 'L';
+              *etop++ = ' ';
+              etop = itoa(2*elen+1,digits,etop);
               j = -1;
               for (i = 0; i < elen; i++)
                 { co = ops+i;
+                  *etop++ = ' ';
                   if (co->del > 0)
-                    fprintf(ERR_OUT," %d",co->pos-j);
+                    etop = itoa(co->pos-j,digits,etop);
                   else if (co->del < 0)
-                    fprintf(ERR_OUT," %d",(co->pos-j)+co->del);
+                    etop = itoa((co->pos-j)+co->del,digits,etop);
                   else
-                    fprintf(ERR_OUT," %d",(co->pos-j)-1);
+                    etop = itoa((co->pos-j)-1,digits,etop);
+                  *etop++ = ' ';
                   if (co->kind == NORMAL)
-                    fprintf(ERR_OUT," %d",co->data);
+                    etop = itoa(co->data,digits,etop);
                   else
-                    fprintf(ERR_OUT," %d",abs(co->del));
+                    etop = itoa(abs(co->del),digits,etop);
                   j = co->pos;
                 }
-              fprintf(ERR_OUT," %lld\n",(len-j)-1);
+              *etop++ = ' ';
+              etop = ltoa((len-j)-1,digits,etop);
+              *etop++ = '\n';
+
+              fwrite(ebuffer,1,etop-ebuffer,ERR_OUT);
             }
+
+          len += del;
+          nol  = (len-1)/WIDTH+1;
 
           //  Output the simulated read
 
-          if (UPPER)
-            Upper_Read((char *) sseq);
-          else
-            Lower_Read((char *) sseq);
+          { int   j, k, u;
+            char *out;
 
-          { int j;
+            if (len + nol >= outmax)
+              { outmax = 1.2*(len+nol) + 1024;
+                obuffer = Realloc(obuffer,outmax,"Reallocating read output buffer");
+              }
 
-            len += del;
-            for (j = 0; j+WIDTH < len; j += WIDTH)
-              fprintf(READ_OUT,"%.*s\n",WIDTH,sseq+j);
+            out = obuffer;
+            for (j = 0, k = j+WIDTH; k < len; j = k, k += WIDTH)
+              { for (u = j; u < k; u++)
+                  out[u] = dna[sseq[u]];
+                out[k] = '\n';
+                out += 1;
+              }
             if (j < len)
-              fprintf(READ_OUT,"%s\n",sseq+j);
+              { for (u = j; u < len; u++)
+                  out[u] = dna[sseq[u]];
+                out[len] = '\n';
+              }
+            fwrite(obuffer,1,len+nol,READ_OUT);
           }
 
           nreads += 1;
@@ -2407,6 +2480,10 @@ static int64 Shotgun(Genome *gene, int ploid, double prate)
       fseek(ERR_OUT,0,SEEK_END);
     }
 
+  free(ebuffer);
+  free(obuffer);
+  free(sseq);
+  free(ops);
   free(oseq);
 
   return (genbp);
@@ -2420,34 +2497,15 @@ static int64 Shotgun(Genome *gene, int ploid, double prate)
  ********************************************************************************************/
 
 int main(int argc, char *argv[])
-{ char       *command;
-  Genome     *source;
+{ Genome     *source;
   char       *PLOIDY;
   int         nhaps;
   Haplotype **haps;
   char        tseq[25];
 
-  //  Capture command line for provenance
+  //  Get current time for ONEfiles
 
-  { int    n, i;
-    char  *c;
-    time_t tprov;
-
-    n = 0;
-    for (i = 1; i < argc; i++)
-      n += strlen(argv[i])+1;
-
-    command = Malloc(n+1,"Allocating command string");
-    if (command == NULL)
-      exit (1);
-
-    c = command;
-    if (argc >= 1)
-      { c += sprintf(c,"%s",argv[1]);
-        for (i = 2; i < argc; i++)
-          c += sprintf(c," %s",argv[i]);
-      }
-    *c = '\0';
+  { time_t tprov;
 
     tprov = time(NULL);
     strftime(tseq,20,"%F_%T",localtime(&tprov));
@@ -2576,9 +2634,21 @@ int main(int argc, char *argv[])
     if (FASTOUT)
       READ_OUT = stdout;
     else
-      READ_OUT = fopen(Catenate(OUT,".fasta","",""),"w");
+      { READ_OUT = fopen(Catenate(OUT,".fasta","",""),"w");
+        if (READ_OUT == NULL)
+          { fprintf(stderr,"%s: Cannot open %s.fasta for writing\n",Prog_Name,OUT);
+            exit (1);
+          }
+        setvbuf(READ_OUT,NULL,_IOFBF,IO_BUFFER_SIZE);
+      }
     if (ERRINFO)
-      ERR_OUT = fopen(Catenate(OUT,".err","",""),"w");
+      { ERR_OUT = fopen(Catenate(OUT,".err","",""),"w");
+        if (ERR_OUT == NULL)
+          { fprintf(stderr,"%s: Cannot open %s.err for writing\n",Prog_Name,OUT);
+            exit (1);
+          }
+        setvbuf(ERR_OUT,NULL,_IOFBF,IO_BUFFER_SIZE);
+      }
   }
 
   haps = Gen_Haplotypes(source,PLOIDY,&nhaps);
@@ -2598,7 +2668,8 @@ int main(int argc, char *argv[])
 
           fprintf(f,"1 3 hap\n");
           fprintf(f,"! %ld %s 3 1.0 %ld %s %ld %s\n",strlen(Prog_Name),Prog_Name,
-                                                     strlen(command),command,strlen(tseq),tseq);
+                                                     strlen(Command_Line),Command_Line,
+                                                     strlen(tseq),tseq);
           Output_Haplotype(haps[p],f);
 
           fclose(f);
@@ -2625,7 +2696,8 @@ int main(int argc, char *argv[])
     if (ERRINFO)
       { fprintf(ERR_OUT,"1 3 err\n");
         fprintf(ERR_OUT,"! %ld %s 3 1.0 %ld %s %ld %s\n",strlen(Prog_Name),Prog_Name,
-                                                         strlen(command),command,strlen(tseq),tseq);
+                                                         strlen(Command_Line),Command_Line,
+                                                         strlen(tseq),tseq);
       }
     COVERAGE /= nhaps;
     for (p = 0; p < nhaps; p++)

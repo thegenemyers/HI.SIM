@@ -3,6 +3,7 @@
 #define _CORE
 
 #include <stdio.h>
+#include <time.h>
 
 /*******************************************************************************************
  *
@@ -27,11 +28,36 @@ typedef double             float64;
  *
  ********************************************************************************************/
 
+extern char *Error_Buffer;   //  If non-NULL place error messages here
+
 extern char *Prog_Name;   //  Name of program, available everywhere
 
-#define ARG_INIT(name)                  \
-  Prog_Name = Strdup(name,"");          \
-  for (i = 0; i < 128; i++)             \
+extern char *Command_Line;   //  Name of program, available everywhere
+
+#define ARG_INIT(name)                  			\
+  { int   n, i;							\
+    char *c;							\
+								\
+    n = 0;							\
+    for (i = 0; i < argc; i++)					\
+      n += strlen(argv[i])+1;					\
+								\
+    Command_Line = Malloc(n+1,"Allocating command string");	\
+    if (Command_Line == NULL)					\
+      exit (1);							\
+								\
+    c = Command_Line;						\
+    if (argc >= 1)						\
+      { c += sprintf(c,"%s",argv[0]);				\
+        for (i = 1; i < argc; i++)				\
+          c += sprintf(c," %s",argv[i]);			\
+      }								\
+    *c = '\0';							\
+  }								\
+								\
+  Error_Buffer = NULL;  	        			\
+  Prog_Name = Strdup(name,"");          			\
+  for (i = 0; i < 128; i++)             			\
     flags[i] = 0;
 
 #define ARG_FLAGS(set)                                                                  \
@@ -77,18 +103,39 @@ extern char *Prog_Name;   //  Name of program, available everywhere
 
 /*******************************************************************************************
  *
+ *  ERROR HANDLING
+ *
+ ********************************************************************************************/
+
+#define EXIT(x)			\
+{ if (Error_Buffer == NULL)	\
+    exit (1);			\
+  return (x);			\
+}
+
+int EPRINTF(char *format, ...);
+int WPRINTF(char *format, ...);
+
+
+/*******************************************************************************************
+ *
  *  MEMORY ALLOCATION,FILE HANDLING, AND PRETTY PRINTING UTILITIES
  *
  ********************************************************************************************/
 
 //  The following general utilities return NULL if any of their input pointers are NULL, or if they
 //    could not perform their function (in which case they also print an error to stderr).
+    
+char *SafeTemp(char *name_core);                         //  mkstemp used for safe temporary
+    
+void SystemX(char *command);                             //  Guarded version of system
 
 void *Malloc(int64 size, char *mesg);                    //  Guarded versions of malloc, realloc
 void *Realloc(void *object, int64 size, char *mesg);     //  and strdup, that output "mesg" to
 char *Strdup(char *string, char *mesg);                  //  stderr if out of memory
 char *Strndup(char *string, int len, char *mesg);        //  stderr if out of memory
 
+FILE *Fopen(char *path, char *mode);     // Open file path for "mode"
 char *PathTo(char *path);                // Return path portion of file name "path"
 char *Root(char *path, char *suffix);    // Return the root name, excluding suffix, of "path"
 
@@ -98,8 +145,9 @@ char *Root(char *path, char *suffix);    // Return the root name, excluding suff
 char *Catenate(char *path, char *sep, char *root, char *suffix);
 char *Numbered_Suffix(char *left, int num, char *right);
 
-void Print_Number(int64 num, int width, FILE *out);   //  Print readable big integer
-int  Number_Digits(int64 num);                        //  Return # of digits in printed number
+void Print_Number(int64 num, int width, FILE *out);       //  Print readable big integer
+int  Number_To_String(int64 num, int width, char *where); //  Place # at where, return # of chars
+int  Number_Digits(int64 num);                            //  Return # of digits in printed number
 
 /*******************************************************************************************
  *
@@ -109,8 +157,8 @@ int  Number_Digits(int64 num);                        //  Return # of digits in 
 
 #define COMPRESSED_LEN(len)  (((len)+3) >> 2)
 
-void   Compress_Read(int len, char *s);   //  Compress read in-place into 2-bit form
-void Uncompress_Read(int len, char *s);   //  Uncompress read in-place into numeric form
+void   Compress_Read(int len, char *s);            //  Compress read in-place into 2-bit form
+void Uncompress_Read(int len, char *s, int beg);   //  Uncompress read in-place into numeric form
 void      Print_Read(char *s, int width);
 
 void Lower_Read(char *s);     //  Convert read from numbers to lowercase letters (0-3 to acgt)
@@ -120,5 +168,14 @@ void Change_Read(char *s);    //  Convert read from one case to the other
 
 void Letter_Arrow(char *s);   //  Convert arrow pw's from numbers to uppercase letters (0-3 to 1234)
 void Number_Arrow(char *s);   //  Convert arrow pw string from letters to numbers
+
+/*******************************************************************************************
+ *
+ *  RESOURCE UTILITY
+ *
+ ********************************************************************************************/
+
+void StartTime();
+void TimeTo(FILE *f, int all, int reset);
 
 #endif // _CORE
