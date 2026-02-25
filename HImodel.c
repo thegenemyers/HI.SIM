@@ -990,7 +990,7 @@ static void *scan_thread(void *args)
       tbps += plen-rep;
 
       ncnt += 1;
-      err   = (10000*err)/(plen-rep);
+      err   = (10000*err)/((plen-rep) == 0 ? 1 : (plen-rep));
       plen += KMER-1;
       rsum += plen;
       rsqr += plen*plen;
