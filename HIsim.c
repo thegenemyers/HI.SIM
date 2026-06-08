@@ -1211,16 +1211,33 @@ static void Output_Haplotype(Haplotype *hap, FILE *file)
 
 static int get_sequence(uint8 *pack, int64 beg, int64 len, uint8 *seq)
 { int64 p, s;
-  int   k;
+  int   b, k;
+
+  if (len <= 0)
+    return ((int) len);
 
   p = (beg >> 2);
-  k = 6-2*(beg&0x3);
-  for (s = 0; s < len; s++)
-    { seq[s] = (pack[p]>>k) & 0x3; 
-      if (k == 0)
-        { p += 1; k = 6; }
-      else
-        k -= 2;
+  s = 0;
+  k = beg & 0x3;
+  if (k != 0)
+    { b = pack[p++];
+      for ( ; k < 4 && s < len; k++)
+        seq[s++] = (b >> (6-2*k)) & 0x3;
+    }
+
+  while (s+4 <= len)
+    { b = pack[p++];
+      seq[s]   = b >> 6;
+      seq[s+1] = (b >> 4) & 0x3;
+      seq[s+2] = (b >> 2) & 0x3;
+      seq[s+3] = b & 0x3;
+      s += 4;
+    }
+
+  if (s < len)
+    { b = pack[p];
+      for (k = 0; s < len; k++)
+        seq[s++] = (b >> (6-2*k)) & 0x3;
     }
   return ((int) len);
 }
@@ -2321,7 +2338,7 @@ static int64 Shotgun(Genome *gene, int ploid, double prate)
 
           if (len+del > smax)
             { smax = 1.2*(len+del) + 1000;
-              sseq = Realloc(sseq,omax+3,"Allocating read buffer");
+              sseq = Realloc(sseq,smax+3,"Allocating read buffer");
             }
 
           //  Create the erroneous read according to edits in ops
@@ -2703,7 +2720,10 @@ int main(int argc, char *argv[])
     for (p = 0; p < nhaps; p++)
       { if (VERBOSE)
           fprintf(stderr,"    Gen'ing sequence of haplotype %d\n",p+1);
-        ahap = Haplotype_Sequence(haps[p]);
+        if (haps[p]->rate == 0.)
+          ahap = source;
+        else
+          ahap = Haplotype_Sequence(haps[p]);
         if (VERBOSE)
           { fprintf(stderr,"    Sampling hap %d to depth %.1fX\n",p+1,COVERAGE);
             fflush(stderr);
@@ -2713,7 +2733,8 @@ int main(int argc, char *argv[])
           { fprintf(stderr,"      Actually sampled %.1fX\n",(1.*totbp)/ahap->nbase);
             fflush(stderr);
           }
-        Free_Genome(ahap);
+        if (ahap != source)
+          Free_Genome(ahap);
       }
 
     if (VERBOSE)
